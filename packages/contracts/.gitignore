@@ -27,3 +27,4 @@ test/invariants/fuzz/echidna_coverage
 
 # Coverage files
 lcov.info
+deployments/zkblank-local.json

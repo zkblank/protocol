@@ -1,0 +1,20 @@
+{
+  "name": "@zkblank/services",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZKBLANK indexer, association-set provider and relayer, plus the local end-to-end run",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "indexer": "node src/indexer.mjs",
+    "asp": "node src/asp.mjs",
+    "relayer": "node src/relayer.mjs",
+    "e2e:local": "bash e2e/run-local.sh"
+  },
+  "dependencies": {
+    "@0xbow/privacy-pools-core-sdk": "*",
+    "@zk-kit/lean-imt": "*",
+    "poseidon-lite": "*",
+    "viem": "^2.22.14"
+  }
+}

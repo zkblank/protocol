@@ -5,6 +5,27 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Step 4: the whole loop on a local chain, through real services (2026-11-20)
+
+- `packages/contracts/script/zkblank/DeployLocal.s.sol`: deploys the upstream Entrypoint and native pool with the
+  real verifiers, BurnerRouter, BlankFactory, and a test token plus venue. Refuses any chain but 31337.
+- `packages/zkblank-services/`: indexer (public tree and roots, served whole), association-set provider (screens
+  deposits, posts the approved root), relayer (`/v1/relay/buy`, `/v1/relay/sell`). Plain Node, no database,
+  no cookies, no request logging. See its README.
+- `packages/zkblank-services/e2e/run-local.sh`: anvil, deploy, services, then `e2e/client.mjs` acting as the app.
+
+Last run (anvil 31337, all through HTTP):
+
+| Step | Result |
+|---|---|
+| Deposit 1 ETH, ASP screens it and posts the root | approved |
+| Buy 0.5 ETH into blank #1 (proof built in Node from the indexer's tree) | 1,201,319 $XYZ, blank has no code; proof ~3 s; 538k gas |
+| Sell blank #1 back into the vault (EIP-712 intent) | proceeds note 0.497 ETH, blank emptied; 452k gas |
+| Buy into blank #2 from the proceeds | 597,062 $XYZ; proof ~2.2 s; 506k gas |
+| Tampered buy (blank swapped after proving) | relayer refuses at simulation: `ContextMismatch`, no transaction |
+
+Mock token and venue live in `test/zkblank/Mocks.sol` and are deployed only by the local script.
+
 ## Step 3: counterfactual blanks and the sell back into the dark (2026-11-20)
 
 A blank is now a real one-life account:

@@ -5,6 +5,12 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Repository housekeeping (2026-11-20)
+
+- `README.md` now describes ZKBLANK. The upstream README is in the upstream history (commit `df4bf73`).
+- Upstream workflows moved to `.github/workflows-upstream/` so GitHub Actions never runs them here; two of them
+  publish the upstream SDK to npm with upstream secrets.
+
 ## Step 5: Dark Drop, money in from anywhere (2026-11-20)
 
 - `src/contracts/zkblank/DropFactory.sol`: `predict(dropKey, precommitment, keeperFeeBPS)` is a CREATE2 clone

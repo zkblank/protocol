@@ -13,3 +13,5 @@ node_modules
 
 # Cursor rules files
 .cursorrules*
+
+.tools/

@@ -1,0 +1,12 @@
+ZKBLANK protocol
+Copyright 2026 ZKBLANK contributors
+
+This product is a fork of Privacy Pools core (https://github.com/0xbow-io/privacy-pools-core),
+copyright its original authors (0xbow and Wonderland), licensed under the Apache License, Version 2.0.
+The original LICENSE is kept unchanged in this repository.
+
+Upstream base: commit df4bf73 ("build: run CI and relayer image on Node.js 24.22.1 (#137)").
+The upstream audits (Oxorio: circuits, contracts, entrypoint upgrade; Auditware: contracts) cover the
+upstream code at their audited commits. They do not cover changes made in this fork.
+
+Changes in this fork are listed in FORK.md.

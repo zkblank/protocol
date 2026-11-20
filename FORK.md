@@ -5,6 +5,39 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Step 6: live on Robinhood Chain testnet (2026-11-20)
+
+Deployed with `script/zkblank/DeployTestnet.s.sol` (chain 46630 only) and verified on the testnet explorer.
+Addresses: `packages/contracts/deployments/zkblank-testnet.json`.
+
+| Contract | Address |
+|---|---|
+| Entrypoint (proxy) | [`0xfBBd680F1bA8dA5C491E140FbA057E7D151c84dA`](https://explorer.testnet.chain.robinhood.com/address/0xfBBd680F1bA8dA5C491E140FbA057E7D151c84dA) |
+| PrivacyPoolSimple (ETH) | [`0x62C001eE57D276735860166864447252FEE5b6a2`](https://explorer.testnet.chain.robinhood.com/address/0x62C001eE57D276735860166864447252FEE5b6a2) |
+| BurnerRouter | [`0xb16CC087A9fd8e3D854b34913889f3c15918F72D`](https://explorer.testnet.chain.robinhood.com/address/0xb16CC087A9fd8e3D854b34913889f3c15918F72D) |
+| BlankFactory | [`0x5dC4263cDf4329556364553de438d8D692295d0c`](https://explorer.testnet.chain.robinhood.com/address/0x5dC4263cDf4329556364553de438d8D692295d0c) |
+| DropFactory | [`0xe4d69C06d82B9fA8eB44EfAFbAf8eACE152cd59d`](https://explorer.testnet.chain.robinhood.com/address/0xe4d69C06d82B9fA8eB44EfAFbAf8eACE152cd59d) |
+| Test token / test venue (testnet only) | `0x242dA7c3B3E191153e9cc47Deb1040B8B1F3699F` / `0xe2c87827FDD0CECB96E2Bc45bb9E618f3E23B2Fb` |
+
+The full loop ran on testnet with the services pointed at the public RPC (`e2e/run-testnet.sh`):
+
+| Step | Transaction |
+|---|---|
+| Pay a Dark Drop address by plain transfer | [pay](https://explorer.testnet.chain.robinhood.com/tx/0xefa0e734135d2d42a135c9790d23f87015d30e6dd16cffbf70eb5f9dcb44c4de) |
+| Relayer sweeps it into the sealed note | [sweep](https://explorer.testnet.chain.robinhood.com/tx/0x96dabc805fe66f804c57f10a2bef18df96fe2553536bbecfe2bb3cbe4eec4e10) |
+| Buy into blank #1 (proof built client side, ~2.8 s) | [buy](https://explorer.testnet.chain.robinhood.com/tx/0xdff98b8e8157e48bf4e77cde1933f64d03cf2727c7f1fdf5896305a717e8a236) |
+| Sell blank #1 back into the vault | [sell](https://explorer.testnet.chain.robinhood.com/tx/0x2dedbf4486c654ba926a4cac27a9c062372f5b4f01f86ac2f13f18186b9a25bf) |
+| Buy into blank #2 from the proceeds | [buy](https://explorer.testnet.chain.robinhood.com/tx/0x2d66a7cea58f3a29057e76808bcc58fe711bafa5ff36adcf69e7fe88e8e98b31) |
+| Tampered buy | refused at simulation (`ContextMismatch`), no transaction |
+
+Fixes found on a live chain:
+- Robinhood Chain is an Arbitrum Orbit chain: `block.number` inside a contract is the L1 block. The testnet deploy
+  records the start block from `ArbSys.arbBlockNumber()`.
+- The indexer reads logs in windows of `MAX_RANGE` blocks (default 5,000) and the client waits for its note's leaf
+  in the tree before proving.
+
+Known gap: the reference services run on a developer machine for now; the relay, indexer and ASP are not yet hosted.
+
 ## Repository housekeeping (2026-11-20)
 
 - `README.md` now describes ZKBLANK. The upstream README is in the upstream history (commit `df4bf73`).

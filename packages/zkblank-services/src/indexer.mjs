@@ -6,12 +6,15 @@ import { ABI, clients, loadConfig, serve, shortError, sleep } from './common.mjs
 const cfg = loadConfig();
 const { publicClient } = clients(cfg);
 const port = Number(process.env.INDEXER_PORT ?? 8701);
+const MAX_RANGE = BigInt(process.env.MAX_RANGE ?? 5000);
 
 const state = { block: BigInt(cfg.dep.startBlock ?? 0) - 1n, leaves: [], deposits: [], aspRoot: 0n, stateRoot: 0n };
 
 async function poll() {
-  const latest = await publicClient.getBlockNumber();
-  if (latest <= state.block) return;
+  const head = await publicClient.getBlockNumber();
+  if (head <= state.block) return;
+  // Public RPCs cap eth_getLogs ranges: read at most MAX_RANGE blocks per poll and catch up over several polls
+  const latest = head - state.block > MAX_RANGE ? state.block + MAX_RANGE : head;
   const range = { fromBlock: state.block + 1n, toBlock: latest };
   const [leaves, deposits, roots] = await Promise.all([
     publicClient.getContractEvents({ address: cfg.dep.pool, abi: ABI.pool, eventName: 'LeafInserted', ...range }),

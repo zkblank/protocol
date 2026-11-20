@@ -23,6 +23,9 @@ const ASP = process.env.ASP_URL ?? 'http://127.0.0.1:8702';
 const RELAYER = process.env.RELAYER_URL ?? 'http://127.0.0.1:8703';
 const RELAY_FEE_BPS = 25n;
 const TOKENS_PER_ETH = 2_408_660n * 10n ** 18n;
+// The amount Alice drops; buys are half of the note. Local default 1 ETH, testnet runs pass a small DEPOSIT_WEI.
+const AMOUNT = BigInt(process.env.DEPOSIT_WEI ?? 10n ** 18n);
+const WAIT_MS = Number(process.env.WAIT_MS ?? 30000);
 
 const sdk = new PrivacyPoolSDK(new Circuits({ browser: false }));
 const scope = BigInt(cfg.dep.scope);
@@ -41,7 +44,7 @@ const post = async (url, body) => {
   return j;
 };
 
-async function waitFor(what, fn, timeoutMs = 30000) {
+async function waitFor(what, fn, timeoutMs = WAIT_MS) {
   const t0 = Date.now();
   for (;;) {
     const v = await fn();
@@ -80,8 +83,13 @@ async function buyIntoBlank(note, spend, buyData, tamper) {
       ),
     ) % SNARK_SCALAR_FIELD;
 
-  // Everything below is public data the indexer serves whole: no request names the leaf we care about
-  const tree = await getJson(`${INDEXER}/v1/tree`);
+  // Everything below is public data the indexer serves whole: no request names the leaf we care about.
+  // On a live chain the indexer can trail by a few blocks, so wait until the note's leaf is in the tree.
+  const target = getCommitment(note.value, note.label, note.nullifier, note.secret).hash.toString();
+  const tree = await waitFor('the note in the indexer tree', async () => {
+    const t = await getJson(`${INDEXER}/v1/tree`);
+    return t.leaves.includes(target) ? t : null;
+  });
   const asp = await getJson(`${ASP}/v1/asp`);
   const leaves = tree.leaves.map(BigInt);
   const labels = asp.labels.map(BigInt);
@@ -137,7 +145,7 @@ async function main() {
   const drop = await publicClient.readContract({
     address: cfg.dep.dropFactory, abi: ABI.drops, functionName: 'predict', args: [dropKey.address, precommitment, keeperFeeBPS],
   });
-  const payHash = await alice.sendTransaction({ to: drop, value: 10n ** 18n });
+  const payHash = await alice.sendTransaction({ to: drop, value: AMOUNT });
   await publicClient.waitForTransactionReceipt({ hash: payHash });
   const dropCode = await publicClient.getCode({ address: drop });
   const sweep = await post(`${RELAYER}/v1/relay/sweep`, { owner: dropKey.address, precommitment, keeperFeeBPS });
@@ -147,7 +155,7 @@ async function main() {
   if (BigInt(dep1.commitment) !== getCommitment(note.value, note.label, note.nullifier, note.secret).hash) {
     throw new Error('the swept note is not the one Alice sealed');
   }
-  log('Dark Drop: pay 1 ETH to a one-time address, relayer sweeps, ASP approves', {
+  log(`Dark Drop: pay ${formatEther(AMOUNT)} ETH to a one-time address, relayer sweeps, ASP approves`, {
     drop, dropHadCode: Boolean(dropCode && dropCode !== '0x'), payTx: payHash, sweepTx: sweep.txHash, noteValue: formatEther(note.value),
   });
 
@@ -155,14 +163,15 @@ async function main() {
   const blank1Key = privateKeyToAccount(generatePrivateKey());
   const blank1 = await publicClient.readContract({ address: cfg.dep.blankFactory, abi: ABI.factory, functionName: 'predict', args: [blank1Key.address] });
   const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 300);
-  const buy1 = await buyIntoBlank(note, 5n * 10n ** 17n, {
+  const spend1 = note.value / 2n;
+  const buy1 = await buyIntoBlank(note, spend1, {
     blank: blank1, tokenOut: cfg.dep.token, minAmountOut: 1n, deadline: deadline(),
     adapter: cfg.dep.venue, adapterData: '0x', feeRecipient, relayFeeBPS: RELAY_FEE_BPS,
   });
   const held = await publicClient.readContract({ address: cfg.dep.token, abi: ABI.erc20, functionName: 'balanceOf', args: [blank1] });
   const code1 = await publicClient.getCode({ address: blank1 });
   if (held === 0n || (code1 && code1 !== '0x')) throw new Error('blank #1 should hold tokens and have no code');
-  log('buy 0.5 ETH into blank #1 via relayer', {
+  log(`buy ${formatEther(spend1)} ETH into blank #1 via relayer`, {
     blank: blank1, tokens: formatEther(held), blankHasCode: false, proveMs: buy1.proveMs, tx: buy1.res.txHash, gasUsed: buy1.res.gasUsed,
   });
 
@@ -205,7 +214,8 @@ async function main() {
   const change2 = buy2.change;
   const blank3 = getAddress(`0x${randomBytes(20).toString('hex')}`);
   const thief = getAddress(`0x${randomBytes(20).toString('hex')}`);
-  const before = await publicClient.getBlockNumber();
+  const relayerNonce = () => publicClient.getTransactionCount({ address: feeRecipient });
+  const before = await relayerNonce();
   let refused = '';
   try {
     await buyIntoBlank(change2, change2.value / 2n, {
@@ -218,8 +228,10 @@ async function main() {
   } catch (e) {
     refused = String(e.message);
   }
-  const after = await publicClient.getBlockNumber();
-  if (!refused || after !== before) throw new Error('a tampered buy must be refused before any transaction');
+  const after = await relayerNonce();
+  if (!/ContextMismatch/.test(refused) || after !== before) {
+    throw new Error(`a tampered buy must be refused at simulation, got: ${refused || 'no error'}`);
+  }
   log('tampered buy refused by the relayer, no transaction sent', { reason: refused.slice(0, 120) });
 
   summary.ok = true;

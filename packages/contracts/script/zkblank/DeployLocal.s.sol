@@ -42,17 +42,17 @@ contract DeployLocal is Script {
     address venue;
   }
 
-  function run() external {
+  function run() external virtual {
     require(block.chainid == 31_337, 'DeployLocal: local chain only');
     uint256 _pk = vm.envUint('DEPLOYER_PK');
     address _postman = vm.envAddress('POSTMAN');
 
     vm.startBroadcast(_pk);
     Deployed memory _d = _deployCore(vm.addr(_pk), _postman);
-    _deployLocalVenue(_d);
+    _deployLocalVenue(_d, 100 ether);
     vm.stopBroadcast();
 
-    _write(_d, _postman);
+    _write(_d, _postman, 'deployments/zkblank-local.json');
   }
 
   function _deployCore(address _deployer, address _postman) internal returns (Deployed memory _d) {
@@ -76,17 +76,22 @@ contract DeployLocal is Script {
     _d.drops = address(new DropFactory(_entrypoint));
   }
 
-  function _deployLocalVenue(Deployed memory _d) internal {
+  function _deployLocalVenue(Deployed memory _d, uint256 _funding) internal {
     _d.token = address(new MockToken());
     _d.venue = address(new MockVenue(_TOKENS_PER_ETH));
-    (bool _ok,) = _d.venue.call{value: 100 ether}('');
+    (bool _ok,) = _d.venue.call{value: _funding}('');
     require(_ok, 'DeployLocal: venue funding failed');
   }
 
-  function _write(Deployed memory _d, address _postman) internal {
+  /// @dev The block the indexer starts from. Overridden on Arbitrum Orbit chains, where block.number is the L1 block
+  function _startBlock() internal view virtual returns (uint256) {
+    return block.number;
+  }
+
+  function _write(Deployed memory _d, address _postman, string memory _path) internal {
     string memory _o = 'zkblank';
     vm.serializeUint(_o, 'chainId', block.chainid);
-    vm.serializeUint(_o, 'startBlock', block.number);
+    vm.serializeUint(_o, 'startBlock', _startBlock());
     vm.serializeAddress(_o, 'entrypoint', _d.entrypoint);
     vm.serializeAddress(_o, 'pool', _d.pool);
     vm.serializeUint(_o, 'scope', _d.scope);
@@ -96,6 +101,6 @@ contract DeployLocal is Script {
     vm.serializeAddress(_o, 'token', _d.token);
     vm.serializeAddress(_o, 'venue', _d.venue);
     string memory _json = vm.serializeAddress(_o, 'postman', _postman);
-    vm.writeJson(_json, 'deployments/zkblank-local.json');
+    vm.writeJson(_json, _path);
   }
 }

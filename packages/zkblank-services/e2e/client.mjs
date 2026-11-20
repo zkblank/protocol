@@ -1,5 +1,6 @@
 // ZKBLANK end to end, the way the app will do it, against a running chain + indexer + ASP + relayer:
-//   1. Dark Drop stand-in: Alice deposits 1 ETH; the ASP approves it
+//   1. Dark Drop: Alice pays 1 ETH by plain transfer to a one-time drop address; the relayer sweeps it into the
+//      note her browser sealed, and the ASP approves it
 //   2. Burner Mode: her browser builds the Merkle proofs from the indexer's public tree, proves a spend bound to
 //      a BuyData, and the relayer buys 0.5 ETH of $XYZ into blank #1 (an address with no code)
 //   3. Sell back: blank #1's key signs one SellIntent; the relayer deploys it, sells, and the proceeds become a
@@ -20,7 +21,6 @@ const { publicClient, walletClient: alice } = clients(cfg, process.env.ALICE_PK)
 const INDEXER = process.env.INDEXER_URL ?? 'http://127.0.0.1:8701';
 const ASP = process.env.ASP_URL ?? 'http://127.0.0.1:8702';
 const RELAYER = process.env.RELAYER_URL ?? 'http://127.0.0.1:8703';
-const VETTING_FEE_BPS = 10n;
 const RELAY_FEE_BPS = 25n;
 const TOKENS_PER_ETH = 2_408_660n * 10n ** 18n;
 
@@ -129,22 +129,27 @@ async function main() {
   const details = await getJson(`${RELAYER}/v1/relayer/details`);
   const feeRecipient = getAddress(details.feeRecipient);
 
-  // 1. Deposit (Dark Drop stand-in) and wait for the ASP
+  // 1. Dark Drop: a one-time address paid by a plain transfer, swept by the relayer, approved by the ASP
   const note = { nullifier: secret(), secret: secret() };
   const precommitment = hashPrecommitment(note.nullifier, note.secret);
-  const amount = 10n ** 18n;
-  const depHash = await alice.writeContract({
-    address: cfg.dep.entrypoint,
-    abi: ABI.entrypoint,
-    functionName: 'deposit',
-    args: [precommitment],
-    value: amount,
+  const dropKey = privateKeyToAccount(generatePrivateKey());
+  const keeperFeeBPS = BigInt(details.minKeeperFeeBPS);
+  const drop = await publicClient.readContract({
+    address: cfg.dep.dropFactory, abi: ABI.drops, functionName: 'predict', args: [dropKey.address, precommitment, keeperFeeBPS],
   });
-  await publicClient.waitForTransactionReceipt({ hash: depHash });
-  note.value = amount - (amount * VETTING_FEE_BPS) / 10000n;
-  const dep1 = await waitApproved((d) => d.depositor.toLowerCase() === alice.account.address.toLowerCase());
+  const payHash = await alice.sendTransaction({ to: drop, value: 10n ** 18n });
+  await publicClient.waitForTransactionReceipt({ hash: payHash });
+  const dropCode = await publicClient.getCode({ address: drop });
+  const sweep = await post(`${RELAYER}/v1/relay/sweep`, { owner: dropKey.address, precommitment, keeperFeeBPS });
+  const dep1 = await waitApproved((d) => d.depositor.toLowerCase() === drop.toLowerCase());
   note.label = BigInt(dep1.label);
-  log('deposit 1 ETH, ASP approved', { tx: depHash, noteValue: formatEther(note.value) });
+  note.value = BigInt(dep1.value);
+  if (BigInt(dep1.commitment) !== getCommitment(note.value, note.label, note.nullifier, note.secret).hash) {
+    throw new Error('the swept note is not the one Alice sealed');
+  }
+  log('Dark Drop: pay 1 ETH to a one-time address, relayer sweeps, ASP approves', {
+    drop, dropHadCode: Boolean(dropCode && dropCode !== '0x'), payTx: payHash, sweepTx: sweep.txHash, noteValue: formatEther(note.value),
+  });
 
   // 2. Buy into blank #1, a counterfactual address
   const blank1Key = privateKeyToAccount(generatePrivateKey());

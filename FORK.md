@@ -5,6 +5,25 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Step 5: Dark Drop, money in from anywhere (2026-11-20)
+
+- `src/contracts/zkblank/DropFactory.sol`: `predict(dropKey, precommitment, keeperFeeBPS)` is a CREATE2 clone
+  address that exists before anything is deployed, so it can be paid by a plain transfer from any wallet, bridge
+  or exchange withdrawal. `sweep(...)` (anyone) deploys it and deposits the balance as the note the user sealed.
+  The salt commits to the precommitment and the keeper fee (capped at 1%), so a sweeper can only ever produce the
+  user's note and take the fee the user offered. No owner, no upgrade path.
+- `src/contracts/zkblank/DropBox.sol`: the box itself. ETH that arrives after the first sweep is never stuck: the
+  drop key signs an EIP-712 `Resweep(newPrecommitment, deadline)` and anyone submits it. A reused precommitment is
+  refused by the Entrypoint, so a resweep cannot be replayed.
+- Relayer: `POST /v1/relay/sweep { owner, precommitment, keeperFeeBPS }`. The e2e now starts with a Dark Drop.
+- Tests: `test/zkblank/DarkDrop.t.sol`, 12 cases including a real-proof round trip (pay the drop from a wallet,
+  sweep, buy into a blank from the note).
+
+All ZKBLANK tests: 32 / 32 with real proofs (`forge test --match-path "test/zkblank/*" --ffi`). Upstream unit: 110 / 110.
+
+Known limit, for the ASP: the vault records the drop box as the depositor, not the wallet that paid it. Screening
+the real source means tracing the box's incoming transfers; the reference ASP still screens the depositor only.
+
 ## Step 4: the whole loop on a local chain, through real services (2026-11-20)
 
 - `packages/contracts/script/zkblank/DeployLocal.s.sol`: deploys the upstream Entrypoint and native pool with the
@@ -52,7 +71,7 @@ A blank is now a real one-life account:
 | The implementation contract used directly | reverts |
 | On-chain digest equals the one the app computes before the blank exists | pass |
 
-All ZKBLANK tests: 20 / 20 (`forge test --match-path "test/zkblank/*" --ffi`). Upstream unit tests: 110 / 110.
+All ZKBLANK tests at step 3: 20 / 20 (`forge test --match-path "test/zkblank/*" --ffi`). Upstream unit tests: 110 / 110.
 
 ## Step 2: a spend that pays a swap into a blank (2026-11-20)
 

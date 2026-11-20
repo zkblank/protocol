@@ -9,6 +9,7 @@ import {ProofLib} from 'contracts/lib/ProofLib.sol';
 import {CommitmentVerifier} from 'contracts/verifiers/CommitmentVerifier.sol';
 import {WithdrawalVerifier} from 'contracts/verifiers/WithdrawalVerifier.sol';
 import {BlankFactory} from 'contracts/zkblank/BlankFactory.sol';
+import {DropFactory} from 'contracts/zkblank/DropFactory.sol';
 import {BurnerRouter} from 'contracts/zkblank/BurnerRouter.sol';
 
 import {IERC20} from '@oz/interfaces/IERC20.sol';
@@ -43,6 +44,7 @@ contract ZkblankBase is IntegrationUtils {
   PrivacyPoolSimple internal _pool;
   BurnerRouter internal _router;
   BlankFactory internal _factory;
+  DropFactory internal _drops;
   MockToken internal _xyz;
   MockVenue internal _venue;
 
@@ -61,6 +63,7 @@ contract ZkblankBase is IntegrationUtils {
 
     _router = new BurnerRouter();
     _factory = new BlankFactory(_entrypoint);
+    _drops = new DropFactory(_entrypoint);
     _xyz = new MockToken();
     _venue = new MockVenue(_TOKENS_PER_ETH);
     vm.deal(address(_venue), 1000 ether);

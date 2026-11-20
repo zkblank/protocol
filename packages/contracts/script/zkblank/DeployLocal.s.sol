@@ -11,6 +11,7 @@ import {Constants} from 'contracts/lib/Constants.sol';
 import {CommitmentVerifier} from 'contracts/verifiers/CommitmentVerifier.sol';
 import {WithdrawalVerifier} from 'contracts/verifiers/WithdrawalVerifier.sol';
 import {BlankFactory} from 'contracts/zkblank/BlankFactory.sol';
+import {DropFactory} from 'contracts/zkblank/DropFactory.sol';
 import {BurnerRouter} from 'contracts/zkblank/BurnerRouter.sol';
 import {IPrivacyPool} from 'interfaces/IPrivacyPool.sol';
 
@@ -30,14 +31,31 @@ contract DeployLocal is Script {
   uint256 internal constant _MAX_RELAY_FEE_BPS = 500;
   uint256 internal constant _TOKENS_PER_ETH = 2_408_660 ether;
 
+  struct Deployed {
+    address entrypoint;
+    address pool;
+    uint256 scope;
+    address router;
+    address factory;
+    address drops;
+    address token;
+    address venue;
+  }
+
   function run() external {
     require(block.chainid == 31_337, 'DeployLocal: local chain only');
     uint256 _pk = vm.envUint('DEPLOYER_PK');
-    address _deployer = vm.addr(_pk);
     address _postman = vm.envAddress('POSTMAN');
 
     vm.startBroadcast(_pk);
+    Deployed memory _d = _deployCore(vm.addr(_pk), _postman);
+    _deployLocalVenue(_d);
+    vm.stopBroadcast();
 
+    _write(_d, _postman);
+  }
+
+  function _deployCore(address _deployer, address _postman) internal returns (Deployed memory _d) {
     WithdrawalVerifier _withdrawalVerifier = new WithdrawalVerifier();
     CommitmentVerifier _commitmentVerifier = new CommitmentVerifier();
     address _impl = address(new Entrypoint());
@@ -50,26 +68,33 @@ contract DeployLocal is Script {
       IERC20(Constants.NATIVE_ASSET), IPrivacyPool(address(_pool)), 1, _VETTING_FEE_BPS, _MAX_RELAY_FEE_BPS
     );
 
-    BurnerRouter _router = new BurnerRouter();
-    BlankFactory _factory = new BlankFactory(_entrypoint);
+    _d.entrypoint = address(_entrypoint);
+    _d.pool = address(_pool);
+    _d.scope = _pool.SCOPE();
+    _d.router = address(new BurnerRouter());
+    _d.factory = address(new BlankFactory(_entrypoint));
+    _d.drops = address(new DropFactory(_entrypoint));
+  }
 
-    MockToken _xyz = new MockToken();
-    MockVenue _venue = new MockVenue(_TOKENS_PER_ETH);
-    (bool _ok,) = address(_venue).call{value: 100 ether}('');
+  function _deployLocalVenue(Deployed memory _d) internal {
+    _d.token = address(new MockToken());
+    _d.venue = address(new MockVenue(_TOKENS_PER_ETH));
+    (bool _ok,) = _d.venue.call{value: 100 ether}('');
     require(_ok, 'DeployLocal: venue funding failed');
+  }
 
-    vm.stopBroadcast();
-
+  function _write(Deployed memory _d, address _postman) internal {
     string memory _o = 'zkblank';
     vm.serializeUint(_o, 'chainId', block.chainid);
     vm.serializeUint(_o, 'startBlock', block.number);
-    vm.serializeAddress(_o, 'entrypoint', address(_entrypoint));
-    vm.serializeAddress(_o, 'pool', address(_pool));
-    vm.serializeUint(_o, 'scope', _pool.SCOPE());
-    vm.serializeAddress(_o, 'burnerRouter', address(_router));
-    vm.serializeAddress(_o, 'blankFactory', address(_factory));
-    vm.serializeAddress(_o, 'token', address(_xyz));
-    vm.serializeAddress(_o, 'venue', address(_venue));
+    vm.serializeAddress(_o, 'entrypoint', _d.entrypoint);
+    vm.serializeAddress(_o, 'pool', _d.pool);
+    vm.serializeUint(_o, 'scope', _d.scope);
+    vm.serializeAddress(_o, 'burnerRouter', _d.router);
+    vm.serializeAddress(_o, 'blankFactory', _d.factory);
+    vm.serializeAddress(_o, 'dropFactory', _d.drops);
+    vm.serializeAddress(_o, 'token', _d.token);
+    vm.serializeAddress(_o, 'venue', _d.venue);
     string memory _json = vm.serializeAddress(_o, 'postman', _postman);
     vm.writeJson(_json, 'deployments/zkblank-local.json');
   }

@@ -67,6 +67,12 @@ export const ABI = {
     'error InvalidSignature()', 'error ZeroAddress()', 'error InsufficientOutput()', 'error FailedToSendFee()',
     'error UnexpectedSender()', 'error ECDSAInvalidSignature()', 'error ECDSAInvalidSignatureLength(uint256)',
   ]),
+  drops: parseAbi([
+    'function predict(address _owner, uint256 _precommitment, uint256 _keeperFeeBPS) view returns (address)',
+    'function sweep(address _owner, uint256 _precommitment, uint256 _keeperFeeBPS) returns (address, uint256)',
+    'error FeeTooHigh()', 'error EmptyDrop()', 'error AlreadySwept()', 'error OnlyFactory()',
+    'error FailedToSendFee()', 'error PrecommitmentAlreadyUsed()',
+  ]),
   erc20: parseAbi(['function balanceOf(address) view returns (uint256)']),
 };
 

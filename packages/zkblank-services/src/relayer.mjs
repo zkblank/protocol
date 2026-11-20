@@ -1,7 +1,8 @@
 // ZKBLANK relayer. It carries trades it cannot change: a buy is a proof whose context binds the whole BuyData,
 // a sale is the blank owner's EIP-712 signature over the whole SellIntent. The relayer only checks that it is
 // the fee recipient at an acceptable fee, simulates, and submits. It keeps no logs and sets no cookies.
-//   GET /v1/relayer/details   POST /v1/relay/buy   POST /v1/relay/sell
+// A Dark Drop sweep carries nothing secret either: the drop address already commits to the note and the fee.
+//   GET /v1/relayer/details   POST /v1/relay/buy   POST /v1/relay/sell   POST /v1/relay/sweep
 import { decodeAbiParameters, getAddress } from 'viem';
 import { ABI, BUY_DATA, clients, loadConfig, serve } from './common.mjs';
 
@@ -9,6 +10,7 @@ const cfg = loadConfig();
 const { publicClient, walletClient, account } = clients(cfg, process.env.RELAYER_PK);
 const port = Number(process.env.RELAYER_PORT ?? 8703);
 const minFeeBPS = BigInt(process.env.MIN_FEE_BPS ?? 25);
+const minKeeperFeeBPS = BigInt(process.env.MIN_KEEPER_FEE_BPS ?? 10);
 
 const now = () => BigInt(Math.floor(Date.now() / 1000));
 const big = (x) => BigInt(x);
@@ -34,6 +36,8 @@ serve('relayer', port, {
       chainId: cfg.chain.id,
       feeRecipient: account.address,
       minFeeBPS,
+      minKeeperFeeBPS,
+      dropFactory: cfg.dep.dropFactory,
       pool: cfg.dep.pool,
       burnerRouter: cfg.dep.burnerRouter,
       blankFactory: cfg.dep.blankFactory,
@@ -60,6 +64,18 @@ serve('relayer', port, {
       args: [cfg.dep.pool, withdrawal, p],
     });
     return [200, { ...out, blank: d.blank }];
+  },
+
+  // { owner, precommitment, keeperFeeBPS }: the drop address is derived from exactly these three
+  'POST /v1/relay/sweep': async ({ owner, precommitment, keeperFeeBPS }) => {
+    if (big(keeperFeeBPS) < minKeeperFeeBPS) throw new Error(`keeper fee below ${minKeeperFeeBPS} bps`);
+    const out = await submit({
+      address: cfg.dep.dropFactory,
+      abi: ABI.drops,
+      functionName: 'sweep',
+      args: [getAddress(owner), big(precommitment), big(keeperFeeBPS)],
+    });
+    return [200, out];
   },
 
   // { owner, intent: SellIntent, signature }

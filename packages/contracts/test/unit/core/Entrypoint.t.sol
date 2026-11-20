@@ -335,7 +335,9 @@ contract UnitDeposit is UnitEntrypoint {
       abi.encode(_commitment)
     );
 
+    vm.assume(_depositor != address(_pool));
     uint256 _depositorBalanceBefore = _depositor.balance;
+    uint256 _poolBalanceBefore = address(_pool).balance;
 
     vm.expectEmit(address(_entrypoint));
     emit IEntrypoint.Deposited(_depositor, IPrivacyPool(_params.pool), _commitment, _amountAfterFees);
@@ -346,7 +348,10 @@ contract UnitDeposit is UnitEntrypoint {
     assertEq(
       _depositor.balance, _depositorBalanceBefore - _amount, 'Depositor balance should decrease by deposit amount'
     );
-    assertEq(address(_entrypoint).balance, _amount, 'Entrypoint should receive the deposit amount');
+    // ZKBLANK fork: Foundry 1.x moves the value of a mocked call, so the pool receives the amount after fees and
+    // the Entrypoint keeps only the vetting fee (which is also what happens with a real pool)
+    assertEq(address(_entrypoint).balance, _amount - _amountAfterFees, 'Entrypoint should keep the vetting fee');
+    assertEq(address(_pool).balance, _poolBalanceBefore + _amountAfterFees, 'Pool should receive the amount after fees');
   }
 
   /**
@@ -400,6 +405,8 @@ contract UnitDeposit is UnitEntrypoint {
   ) external givenPoolExists(_params) {
     _assumeFuzzable(_depositor);
     vm.assume(_depositor != address(0));
+    // ZKBLANK fork: Foundry 1.x feeds known constants to the fuzzer; the native asset sentinel is not an ERC20
+    vm.assume(_params.asset != address(_ETH));
 
     // Can't be too big, otherwise overflows
     _amount = bound(_amount, _params.minDeposit, 1e30);
@@ -1606,9 +1613,12 @@ contract UnitReceive is UnitEntrypoint {
     vm.deal(_caller, _amount);
 
     // Check it reverts when sending native asset
-    vm.expectRevert(IEntrypoint.NativeAssetNotAccepted.selector);
+    // ZKBLANK fork: `transfer` forwards 2,300 gas, which runs out inside the proxy before the custom error on newer
+    // EVM gas rules; a plain call forwards enough gas to reach the real revert
     vm.prank(_caller);
-    payable(address(_entrypoint)).transfer(_amount);
+    (bool _ok, bytes memory _ret) = address(_entrypoint).call{value: _amount}('');
+    assertFalse(_ok, 'Entrypoint must refuse native asset');
+    assertEq(bytes4(_ret), IEntrypoint.NativeAssetNotAccepted.selector, 'Wrong revert reason');
   }
 }
 

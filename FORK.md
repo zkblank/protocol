@@ -5,6 +5,34 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Step 3: counterfactual blanks and the sell back into the dark (2026-11-20)
+
+A blank is now a real one-life account:
+
+- `src/contracts/zkblank/BlankFactory.sol`: `predict(owner)` gives the blank's address from its key before
+  anything exists on chain (CREATE2 minimal clone), so a buy pays straight into it. `deployAndSell` deploys it
+  and runs its one sale in the same transaction. No owner, no upgrade path.
+- `src/contracts/zkblank/BlankAccount.sol`: the owner key signs one EIP-712 `SellIntent` (token, amount, minimum
+  ETH out, deadline, venue, the precommitment of the note the proceeds become, relay fee). The domain binds the
+  chain and this blank's address. The blank sells through the venue, measures the ETH that arrived, pays the
+  relayer from it, deposits the rest through `Entrypoint.deposit(precommitment)` and retires, before any
+  external call. It never needs gas and accepts ETH only from the venue during its sale.
+- `src/interfaces/zkblank/IBlankAccount.sol`, `src/interfaces/zkblank/ISellAdapter.sol`.
+- Tests: `test/zkblank/ZkblankBase.sol` (shared setup and helpers), `test/zkblank/BlankLifecycle.t.sol`.
+
+| Test | Result |
+|---|---|
+| Buy into a counterfactual blank, sell it back, buy blank #18 from the proceeds (real proofs) | pass |
+| Relayer lowers the minimum out / redirects the proceeds / raises its fee | reverts `InvalidSignature` |
+| Another key signs the sale | reverts `InvalidSignature` |
+| A signature for one blank used on another | reverts `InvalidSignature` |
+| A second sale, even with a fresh owner signature | reverts `Retired` |
+| Sale past its deadline / venue under-delivers | reverts `DeadlinePassed` / `InsufficientOutput` |
+| The implementation contract used directly | reverts |
+| On-chain digest equals the one the app computes before the blank exists | pass |
+
+All ZKBLANK tests: 20 / 20 (`forge test --match-path "test/zkblank/*" --ffi`). Upstream unit tests: 110 / 110.
+
 ## Step 2: a spend that pays a swap into a blank (2026-11-20)
 
 No circuit change. The upstream withdraw circuit already takes a public `context`, and `PrivacyPool.withdraw`

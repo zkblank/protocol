@@ -5,6 +5,33 @@ Why this base: deposits, a Merkle tree of notes, nullifiers and association sets
 and audited. ZKBLANK adds the trading side on top: spends that pay a swap into a one-life wallet (a blank) and
 sells that come back in as new notes.
 
+## Step 7: hosted services on testnet (2026-11-21)
+
+The indexer, association-set provider and relayer now run as hosted services against Robinhood Chain testnet:
+
+| Service | Public endpoint |
+|---|---|
+| Indexer | `https://app.zkblank.tech/indexer/v1/tree`, `/v1/deposits`, `/v1/roots`, `/v1/health` |
+| Association-set provider | `https://app.zkblank.tech/asp/v1/asp` |
+| Relayer | `https://app.zkblank.tech/relayer/v1/relayer/details`, `POST /v1/relay/buy`, `/v1/relay/sell`, `/v1/relay/sweep` |
+
+- One image (`packages/zkblank-services/Dockerfile`, Node 24, non-root uid 1001), three containers, each read-only
+  with a 256 MB cap and no new privileges, behind the reverse proxy with a path prefix per service.
+- The ASP computes its root with LeanIMT and Poseidon directly (same root as the SDK, checked) and reads the
+  current on-chain root at start, so a restart never re-posts a root.
+- Dependencies pinned to their latest releases: viem 2.58.4, @zk-kit/lean-imt 2.2.5, poseidon-lite 0.3.0.
+
+The full loop ran from a client that talked only to the hosted endpoints:
+[pay](https://explorer.testnet.chain.robinhood.com/tx/0x02f9107da4f3a99c4c22d8096367262f9c76124604fa73f1d19868bbff60c3d5) ·
+[sweep](https://explorer.testnet.chain.robinhood.com/tx/0xd2b9175156f8527fef3d39df09221b6c33593b6e1f6dc97d72734a3bfc2259f4) ·
+[buy](https://explorer.testnet.chain.robinhood.com/tx/0x1860d6dedf13d0d0a198da40630e0b6b1dae4d9cfbea6c8fe35dfc067a6c1cc6) ·
+[sell](https://explorer.testnet.chain.robinhood.com/tx/0xbcdde3a3f0ec959c664254b25890d222fdd4bfe3bd2352f0cf23830b5a226ed1) ·
+[buy again](https://explorer.testnet.chain.robinhood.com/tx/0x87b9cfbe7757a2fa6fc7b532c209387e31c42ed76a79819098cfbd63b609d220) ·
+tampered buy refused (`ContextMismatch`).
+
+Known limits: the indexer keeps state in memory and rebuilds from the start block after a restart; the relayer has
+no rate limit yet, so its testnet gas balance is the budget.
+
 ## Step 6: live on Robinhood Chain testnet (2026-11-20)
 
 Deployed with `script/zkblank/DeployTestnet.s.sol` (chain 46630 only) and verified on the testnet explorer.
@@ -35,8 +62,6 @@ Fixes found on a live chain:
   records the start block from `ArbSys.arbBlockNumber()`.
 - The indexer reads logs in windows of `MAX_RANGE` blocks (default 5,000) and the client waits for its note's leaf
   in the tree before proving.
-
-Known gap: the reference services run on a developer machine for now; the relay, indexer and ASP are not yet hosted.
 
 ## Repository housekeeping (2026-11-20)
 

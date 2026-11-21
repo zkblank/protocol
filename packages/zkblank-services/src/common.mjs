@@ -143,7 +143,9 @@ export function serve(name, port, routes) {
       send(res, 400, { error: shortError(e) });
     }
   });
-  server.listen(port, '127.0.0.1', () => console.log(`${name} listening on 127.0.0.1:${port}`));
+  // 127.0.0.1 by default; containers set HOST=0.0.0.0 and sit behind the reverse proxy
+  const host = process.env.HOST ?? '127.0.0.1';
+  server.listen(port, host, () => console.log(`${name} listening on ${host}:${port}`));
   return server;
 }
 

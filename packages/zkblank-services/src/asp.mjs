@@ -3,7 +3,8 @@
 // approved root on chain with the postman key. Flagged deposits never join the set: they can only ragequit.
 // Production screening (sanctions lists, exploit addresses) plugs in where `screen` is.
 //   GET /v1/health   GET /v1/asp
-import { generateMerkleProof } from '@0xbow/privacy-pools-core-sdk';
+import { LeanIMT } from '@zk-kit/lean-imt';
+import { poseidon2 } from 'poseidon-lite';
 import { keccak256, toHex } from 'viem';
 import { ABI, clients, loadConfig, serve, shortError, sleep } from './common.mjs';
 
@@ -17,6 +18,9 @@ const state = { seen: 0, labels: [], flagged: [], root: 0n, posted: 0n };
 
 const screen = (deposit) => !deny.has(deposit.depositor.toLowerCase());
 
+// The same LeanIMT (Poseidon, 2 inputs) the circuit and the pool use
+const rootOf = (labels) => new LeanIMT((a, b) => poseidon2([a, b]), labels).root;
+
 async function tick() {
   const r = await fetch(`${indexer}/v1/deposits`);
   const { deposits } = await r.json();
@@ -26,7 +30,7 @@ async function tick() {
   state.seen = deposits.length;
   if (state.labels.length === 0) return;
 
-  state.root = generateMerkleProof(state.labels, state.labels[state.labels.length - 1]).root;
+  state.root = rootOf(state.labels);
   if (state.root === state.posted) return;
 
   // The CID would point at the published label list; locally it is a deterministic placeholder
@@ -43,6 +47,12 @@ async function tick() {
 }
 
 (async () => {
+  // After a restart, do not re-post a root the chain already has
+  try {
+    state.posted = await publicClient.readContract({ address: cfg.dep.entrypoint, abi: ABI.entrypoint, functionName: 'latestRoot' });
+  } catch (e) {
+    console.error('asp: could not read latestRoot:', shortError(e));
+  }
   for (;;) {
     try {
       await tick();

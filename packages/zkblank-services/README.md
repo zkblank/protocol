@@ -12,7 +12,10 @@ The relayer checks only that it is the fee recipient at an acceptable fee, simul
 change a trade: a buy is bound by the proof's context, a sale by the blank owner's signature. A tampered buy is
 refused at simulation (`ContextMismatch`) and never reaches the chain.
 
-Environment: `DEPLOYMENT` (deployment json), `RPC_URL`, `RELAYER_PK`, `POSTMAN_PK`, `MIN_FEE_BPS` (default 25), `MIN_KEEPER_FEE_BPS` (default 10),
+Hosted on Robinhood Chain testnet: `https://app.zkblank.tech/indexer/`, `/asp/`, `/relayer/` (each prefix maps to
+the service's own `/v1/...` routes). Container image: `Dockerfile` (non-root, production dependencies only).
+
+Environment: `HOST` (default 127.0.0.1, containers use 0.0.0.0), `DEPLOYMENT` (deployment json), `RPC_URL`, `RELAYER_PK`, `POSTMAN_PK`, `MIN_FEE_BPS` (default 25), `MIN_KEEPER_FEE_BPS` (default 10),
 `DENYLIST`, ports `INDEXER_PORT` / `ASP_PORT` / `RELAYER_PORT`.
 
 ## The whole loop on a local chain
